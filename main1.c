@@ -1,3 +1,7 @@
+// Created by: Deniz Karakay
+// Created on: 28 April 2023
+// Last modified on: 29 April 2023
+
 #include <getopt.h>
 #include <math.h>
 #include <pthread.h>
@@ -263,41 +267,75 @@ int main(int argc, char* argv[]) {
 
     switch (new_atom.atomTYPE) {
       case 'C':
+        // Store atom index
         atom_c_index[current_atoms_count[0]] = new_atom.atomID;
+
+        // Decrement atom count
         atom_count_all[0]--;
+
+        // Increment current atom count
         current_atoms_count[0]++;
+
+        // Signal thread
         pthread_cond_signal(&compose_co2);
         break;
 
       case 'N':
+        // Store atom index
         atom_n_index[current_atoms_count[1]] = new_atom.atomID;
+
+        // Decrement atom count
         atom_count_all[1]--;
+
+        // Increment current atom count
         current_atoms_count[1]++;
+
+        // Signal thread
         pthread_cond_signal(&compose_no2);
         break;
 
       case 'S':
+        // Store atom index
         atom_s_index[current_atoms_count[2]] = new_atom.atomID;
+
+        // Decrement atom count
         atom_count_all[2]--;
+
+        // Increment current atom count
         current_atoms_count[2]++;
+
+        // Signal thread
         pthread_cond_signal(&compose_so2);
-        break;
 
       case 'T':
+        // Store atom index
         atom_th_index[current_atoms_count[3]] = new_atom.atomID;
+
+        // Decrement atom count
         atom_count_all[3]--;
+
+        // Increment current atom count
         current_atoms_count[3]++;
+
+        // Signal thread
         pthread_cond_signal(&compose_tho2);
-        break;
 
       case 'O':
+        // Store atom index
         atom_o_index[current_atoms_count[4]] = new_atom.atomID;
+
+        // Decrement atom count
         atom_count_all[4]--;
+
+        // Increment current atom count
         current_atoms_count[4]++;
+
+        // Signal threads
         pthread_cond_signal(&compose_co2);
         pthread_cond_signal(&compose_no2);
         pthread_cond_signal(&compose_so2);
         pthread_cond_signal(&compose_tho2);
+        break;
 
       default:
         break;
@@ -313,6 +351,7 @@ int main(int argc, char* argv[]) {
     sleep_func();
   }
 
+  // Waste all remaining atoms
   int temp_c = current_atoms_count[0];
   for (int i = 0; i < temp_c; i++) {
     printf("C with ID: %d is wasted\n", atom_c_index[i]);
