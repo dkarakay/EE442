@@ -181,6 +181,9 @@ void sleep_func() {
 int main(int argc, char* argv[]) {
   int opt;
 
+  unsigned int seed = 42;
+  srand(seed);
+
   // Parse command line arguments
   while ((opt = getopt(argc, argv, "c:n:s:t:o:g:")) != -1) {
     switch (opt) {
@@ -278,6 +281,7 @@ int main(int argc, char* argv[]) {
 
         // Signal thread
         pthread_cond_signal(&compose_co2);
+
         break;
 
       case 'N':
@@ -292,6 +296,7 @@ int main(int argc, char* argv[]) {
 
         // Signal thread
         pthread_cond_signal(&compose_no2);
+
         break;
 
       case 'S':
@@ -307,6 +312,8 @@ int main(int argc, char* argv[]) {
         // Signal thread
         pthread_cond_signal(&compose_so2);
 
+        break;
+
       case 'T':
         // Store atom index
         atom_th_index[current_atoms_count[3]] = new_atom.atomID;
@@ -319,6 +326,8 @@ int main(int argc, char* argv[]) {
 
         // Signal thread
         pthread_cond_signal(&compose_tho2);
+
+        break;
 
       case 'O':
         // Store atom index
@@ -335,6 +344,7 @@ int main(int argc, char* argv[]) {
         pthread_cond_signal(&compose_no2);
         pthread_cond_signal(&compose_so2);
         pthread_cond_signal(&compose_tho2);
+
         break;
 
       default:
