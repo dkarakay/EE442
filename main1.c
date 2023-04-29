@@ -3,6 +3,7 @@
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
 #define NUM_ATOM_TYPES 5
@@ -13,17 +14,11 @@ struct atom {
   char atomTYPE;  // C, N, S, O or TH
 };
 
-struct atoms {
-  struct atom* all_atoms;
-  int max_size;
-  int current_size;
-};
-
-struct atoms all_atoms[NUM_ATOM_TYPES];
-
 // Default values
 int count_c = 20, count_n = 20, count_s = 20, count_o = 20, count_th = 20;
 int rate_g = 100;
+
+char compose_molecule[5] = "";
 
 // Atom types
 char atom_types[NUM_ATOM_TYPES] = {'C', 'N', 'S', 'T', 'O'};
@@ -35,7 +30,8 @@ int molecule_order_index = 0;
 
 // Mutex and condition variables
 pthread_mutex_t my_mutex;
-pthread_cond_t compose_co2, compose_no2, compose_so2, compose_tho2;
+pthread_cond_t compose_co2, compose_no2, compose_so2, compose_tho2,
+    print_molecule;
 
 // Compose molecule functions
 void* compose_co2_molecule(void* arg) {
@@ -56,7 +52,8 @@ void* compose_co2_molecule(void* arg) {
 
     // Update molecule order index
     molecule_order_index = (molecule_order_index + 1) % 5;
-    printf("CO2 molecule composed\n");
+    strcpy(compose_molecule, "CO2");
+    pthread_cond_signal(&print_molecule);
 
     // Signal other threads based on the molecule order
     if (molecule_order_index == 1) {
@@ -88,7 +85,8 @@ void* compose_no2_molecule(void* arg) {
 
     // Update molecule order index
     molecule_order_index = (molecule_order_index + 1) % 5;
-    printf("NO2 molecule composed\n");
+    strcpy(compose_molecule, "NO2");
+    pthread_cond_signal(&print_molecule);
 
     // Signal other threads based on the molecule order
     pthread_cond_signal(&compose_co2);
@@ -114,10 +112,11 @@ void* compose_so2_molecule(void* arg) {
 
     // Update molecule order index
     molecule_order_index = (molecule_order_index + 1) % 5;
-    printf("SO2 molecule composed\n");
+    strcpy(compose_molecule, "SO2");
+    pthread_cond_signal(&print_molecule);
 
     // Signal other threads based on the molecule order
-    pthread_cond_signal(&compose_co2);
+    pthread_cond_signal(&compose_tho2);
     pthread_mutex_unlock(&my_mutex);
   }
 }
@@ -140,10 +139,31 @@ void* compose_tho2_molecule(void* arg) {
 
     // Update molecule order index
     molecule_order_index = (molecule_order_index + 1) % 5;
-    printf("THO2 molecule composed\n");
+    strcpy(compose_molecule, "THO2");
+    pthread_cond_signal(&print_molecule);
 
     // Signal other threads based on the molecule order
     pthread_cond_signal(&compose_co2);
+    pthread_mutex_unlock(&my_mutex);
+  }
+}
+
+void* print_molecule_type(void* arg) {
+  while (1) {
+    // Lock mutex
+    pthread_mutex_lock(&my_mutex);
+
+    // Wait until a molecule is composed
+    while (strlen(compose_molecule) == 0) {
+      pthread_cond_wait(&print_molecule, &my_mutex);
+    }
+
+    // Print composed molecule
+    printf("Composed molecule: %s\n", compose_molecule);
+
+    // Reset composed molecule
+    strcpy(compose_molecule, "");
+
     pthread_mutex_unlock(&my_mutex);
   }
 }
@@ -187,7 +207,7 @@ int main(int argc, char* argv[]) {
          count_s, count_th, count_o, rate_g);
 
   // Initialize threads
-  pthread_t t_CO2, t_NO2, t_SO2, t_THO2;
+  pthread_t t_CO2, t_NO2, t_SO2, t_THO2, t_print_molecule_type;
 
   // Initialize mutex and condition variables
   pthread_mutex_init(&my_mutex, NULL);
@@ -201,6 +221,7 @@ int main(int argc, char* argv[]) {
   pthread_create(&t_NO2, NULL, compose_no2_molecule, NULL);
   pthread_create(&t_SO2, NULL, compose_so2_molecule, NULL);
   pthread_create(&t_THO2, NULL, compose_tho2_molecule, NULL);
+  pthread_create(&t_print_molecule_type, NULL, print_molecule_type, NULL);
 
   // Sum of all atoms
   int total_atoms = count_c + count_n + count_s + count_o + count_th;
@@ -208,6 +229,13 @@ int main(int argc, char* argv[]) {
   // Array of all atoms
   int atom_count_all[NUM_ATOM_TYPES] = {count_c, count_n, count_s, count_th,
                                         count_o};
+
+  // Array to store the index of each atom type`
+  int atom_c_index[count_c];
+  int atom_n_index[count_n];
+  int atom_s_index[count_s];
+  int atom_th_index[count_th];
+  int atom_o_index[count_o];
 
   // Atom ID counter
   int atomID = 1;
@@ -235,30 +263,35 @@ int main(int argc, char* argv[]) {
 
     switch (new_atom.atomTYPE) {
       case 'C':
+        atom_c_index[current_atoms_count[0]] = new_atom.atomID;
         atom_count_all[0]--;
         current_atoms_count[0]++;
         pthread_cond_signal(&compose_co2);
         break;
 
       case 'N':
+        atom_n_index[current_atoms_count[1]] = new_atom.atomID;
         atom_count_all[1]--;
         current_atoms_count[1]++;
         pthread_cond_signal(&compose_no2);
         break;
 
       case 'S':
+        atom_s_index[current_atoms_count[2]] = new_atom.atomID;
         atom_count_all[2]--;
         current_atoms_count[2]++;
         pthread_cond_signal(&compose_so2);
         break;
 
       case 'T':
+        atom_th_index[current_atoms_count[3]] = new_atom.atomID;
         atom_count_all[3]--;
         current_atoms_count[3]++;
         pthread_cond_signal(&compose_tho2);
         break;
 
       case 'O':
+        atom_o_index[current_atoms_count[4]] = new_atom.atomID;
         atom_count_all[4]--;
         current_atoms_count[4]++;
         pthread_cond_signal(&compose_co2);
@@ -273,10 +306,36 @@ int main(int argc, char* argv[]) {
     /*printf("C: %d, N: %d, S: %d, TH: %d, O: %d\n", current_atoms_count[0],
            current_atoms_count[1], current_atoms_count[2],
            current_atoms_count[3], current_atoms_count[4]);*/
+
     pthread_mutex_unlock(&my_mutex);
 
     // Sleep for a random amount of time
     sleep_func();
+  }
+
+  int temp_c = current_atoms_count[0];
+  for (int i = 0; i < temp_c; i++) {
+    printf("C with ID: %d is wasted\n", atom_c_index[i]);
+  }
+
+  int temp_n = current_atoms_count[1];
+  for (int i = 0; i < temp_n; i++) {
+    printf("N with ID: %d is wasted\n", atom_n_index[i]);
+  }
+
+  int temp_s = current_atoms_count[2];
+  for (int i = 0; i < temp_s; i++) {
+    printf("S with ID: %d is wasted\n", atom_s_index[i]);
+  }
+
+  int temp_th = current_atoms_count[3];
+  for (int i = 0; i < temp_th; i++) {
+    printf("TH with ID: %d is wasted\n", atom_th_index[i]);
+  }
+
+  int temp_o = current_atoms_count[4];
+  for (int i = 0; i < temp_o; i++) {
+    printf("O with ID: %d is wasted\n", atom_o_index[i]);
   }
 
   return 0;
