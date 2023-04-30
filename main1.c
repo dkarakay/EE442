@@ -184,7 +184,8 @@ void sleep_func() {
 int main(int argc, char* argv[]) {
   int opt;
 
-  unsigned int seed = time(NULL);
+  // Seed random number generator
+  unsigned int seed = 42;
   srand(seed);
 
   // Parse command line arguments
@@ -240,13 +241,7 @@ int main(int argc, char* argv[]) {
   int atom_count_all[NUM_ATOM_TYPES] = {count_c, count_n, count_s, count_th,
                                         count_o};
 
-  // Array to store the index of each atom type`
-  /*int atom_c_index[count_c];
-  int atom_n_index[count_n];
-  int atom_s_index[count_s];
-  int atom_th_index[count_th];
-  int atom_o_index[count_o];*/
-
+  // Create dynamic arrays of atoms for each type of atom
   atoms_c = malloc(count_c * sizeof(struct atom));
   atoms_n = malloc(count_n * sizeof(struct atom));
   atoms_s = malloc(count_s * sizeof(struct atom));
@@ -359,10 +354,7 @@ int main(int argc, char* argv[]) {
         break;
     }
 
-    /*printf("C: %d, N: %d, S: %d, TH: %d, O: %d\n", current_atoms_count[0],
-           current_atoms_count[1], current_atoms_count[2],
-           current_atoms_count[3], current_atoms_count[4]);*/
-
+    // Unlock mutex
     pthread_mutex_unlock(&my_mutex);
 
     // Sleep for a random amount of time
@@ -394,6 +386,22 @@ int main(int argc, char* argv[]) {
   for (int i = temp_o; i < current_atoms_count[4]; i++) {
     printf("O with ID: %d is wasted\n", atoms_o[i].atomID);
   }
+
+  // Cancel threads
+  pthread_cancel(t_CO2);
+  pthread_cancel(t_NO2);
+  pthread_cancel(t_SO2);
+  pthread_cancel(t_THO2);
+
+  // Cancel print molecule thread
+  pthread_cancel(t_print_molecule_type);
+
+  // Destroy mutex and condition variables
+  pthread_mutex_destroy(&my_mutex);
+  pthread_cond_destroy(&compose_co2);
+  pthread_cond_destroy(&compose_no2);
+  pthread_cond_destroy(&compose_so2);
+  pthread_cond_destroy(&compose_tho2);
 
   // Free memory
   free(atoms_c);
