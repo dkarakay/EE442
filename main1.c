@@ -37,6 +37,9 @@ pthread_mutex_t my_mutex;
 pthread_cond_t compose_co2, compose_no2, compose_so2, compose_tho2,
     print_molecule;
 
+// Atoms arrays for each type
+struct atom *atoms_c, *atoms_n, *atoms_s, *atoms_th, *atoms_o;
+
 // Compose molecule functions
 void* compose_co2_molecule(void* arg) {
   while (1) {
@@ -238,11 +241,17 @@ int main(int argc, char* argv[]) {
                                         count_o};
 
   // Array to store the index of each atom type`
-  int atom_c_index[count_c];
+  /*int atom_c_index[count_c];
   int atom_n_index[count_n];
   int atom_s_index[count_s];
   int atom_th_index[count_th];
-  int atom_o_index[count_o];
+  int atom_o_index[count_o];*/
+
+  atoms_c = malloc(count_c * sizeof(struct atom));
+  atoms_n = malloc(count_n * sizeof(struct atom));
+  atoms_s = malloc(count_s * sizeof(struct atom));
+  atoms_th = malloc(count_th * sizeof(struct atom));
+  atoms_o = malloc(count_o * sizeof(struct atom));
 
   // Atom ID counter
   int atomID = 1;
@@ -270,9 +279,8 @@ int main(int argc, char* argv[]) {
 
     switch (new_atom.atomTYPE) {
       case 'C':
-        // Store atom index
-        atom_c_index[current_atoms_count[0]] = new_atom.atomID;
-
+        // Store atom in array
+        atoms_c[current_atoms_count[0]] = new_atom;
         // Decrement atom count
         atom_count_all[0]--;
 
@@ -285,8 +293,8 @@ int main(int argc, char* argv[]) {
         break;
 
       case 'N':
-        // Store atom index
-        atom_n_index[current_atoms_count[1]] = new_atom.atomID;
+        // Store atom in array
+        atoms_n[current_atoms_count[1]] = new_atom;
 
         // Decrement atom count
         atom_count_all[1]--;
@@ -300,8 +308,8 @@ int main(int argc, char* argv[]) {
         break;
 
       case 'S':
-        // Store atom index
-        atom_s_index[current_atoms_count[2]] = new_atom.atomID;
+        // Store atom in array
+        atoms_s[current_atoms_count[2]] = new_atom;
 
         // Decrement atom count
         atom_count_all[2]--;
@@ -315,8 +323,8 @@ int main(int argc, char* argv[]) {
         break;
 
       case 'T':
-        // Store atom index
-        atom_th_index[current_atoms_count[3]] = new_atom.atomID;
+        // Store atom in array
+        atoms_th[current_atoms_count[3]] = new_atom;
 
         // Decrement atom count
         atom_count_all[3]--;
@@ -330,8 +338,8 @@ int main(int argc, char* argv[]) {
         break;
 
       case 'O':
-        // Store atom index
-        atom_o_index[current_atoms_count[4]] = new_atom.atomID;
+        // Store atom in array
+        atoms_o[current_atoms_count[4]] = new_atom;
 
         // Decrement atom count
         atom_count_all[4]--;
@@ -364,28 +372,35 @@ int main(int argc, char* argv[]) {
   // Waste all remaining atoms
   int temp_c = count_c - current_atoms_count[0];
   for (int i = temp_c; i < current_atoms_count[0]; i++) {
-    printf("C with ID: %d is wasted\n", atom_c_index[i]);
+    printf("C with ID: %d is wasted\n", atoms_c[i].atomID);
   }
 
   int temp_n = count_n - current_atoms_count[1];
   for (int i = temp_n; i < current_atoms_count[1]; i++) {
-    printf("N with ID: %d is wasted\n", atom_n_index[i]);
+    printf("N with ID: %d is wasted\n", atoms_n[i].atomID);
   }
 
   int temp_s = count_s - current_atoms_count[2];
   for (int i = temp_s; i < current_atoms_count[2]; i++) {
-    printf("S with ID: %d is wasted\n", atom_s_index[i]);
+    printf("S with ID: %d is wasted\n", atoms_s[i].atomID);
   }
 
   int temp_th = count_th - current_atoms_count[3];
   for (int i = temp_th; i < current_atoms_count[3]; i++) {
-    printf("T with ID: %d is wasted\n", atom_th_index[i]);
+    printf("T with ID: %d is wasted\n", atoms_th[i].atomID);
   }
 
   int temp_o = count_o - current_atoms_count[4];
   for (int i = temp_o; i < current_atoms_count[4]; i++) {
-    printf("O with ID: %d is wasted\n", atom_o_index[i]);
+    printf("O with ID: %d is wasted\n", atoms_o[i].atomID);
   }
+
+  // Free memory
+  free(atoms_c);
+  free(atoms_n);
+  free(atoms_s);
+  free(atoms_th);
+  free(atoms_o);
 
   return 0;
 }
