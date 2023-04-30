@@ -362,28 +362,28 @@ int main(int argc, char* argv[]) {
   }
 
   // Waste all remaining atoms
-  int temp_c = current_atoms_count[0];
-  for (int i = 0; i < temp_c; i++) {
+  int temp_c = count_c - current_atoms_count[0];
+  for (int i = temp_c; i < current_atoms_count[0]; i++) {
     printf("C with ID: %d is wasted\n", atom_c_index[i]);
   }
 
-  int temp_n = current_atoms_count[1];
-  for (int i = 0; i < temp_n; i++) {
+  int temp_n = count_n - current_atoms_count[1];
+  for (int i = temp_n; i < current_atoms_count[1]; i++) {
     printf("N with ID: %d is wasted\n", atom_n_index[i]);
   }
 
-  int temp_s = current_atoms_count[2];
-  for (int i = 0; i < temp_s; i++) {
+  int temp_s = count_s - current_atoms_count[2];
+  for (int i = temp_s; i < current_atoms_count[2]; i++) {
     printf("S with ID: %d is wasted\n", atom_s_index[i]);
   }
 
-  int temp_th = current_atoms_count[3];
-  for (int i = 0; i < temp_th; i++) {
-    printf("TH with ID: %d is wasted\n", atom_th_index[i]);
+  int temp_th = count_th - current_atoms_count[3];
+  for (int i = temp_th; i < current_atoms_count[3]; i++) {
+    printf("T with ID: %d is wasted\n", atom_th_index[i]);
   }
 
-  int temp_o = current_atoms_count[4];
-  for (int i = 0; i < temp_o; i++) {
+  int temp_o = count_o - current_atoms_count[4];
+  for (int i = temp_o; i < current_atoms_count[4]; i++) {
     printf("O with ID: %d is wasted\n", atom_o_index[i]);
   }
 
