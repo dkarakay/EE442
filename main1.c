@@ -1,6 +1,6 @@
 // Created by: Deniz Karakay
 // Created on: 28 April 2023
-// Last modified on: 29 April 2023
+// Last modified on: 30 April 2023
 
 #include <getopt.h>
 #include <math.h>
@@ -181,7 +181,7 @@ void sleep_func() {
 int main(int argc, char* argv[]) {
   int opt;
 
-  unsigned int seed = 42;
+  unsigned int seed = time(NULL);
   srand(seed);
 
   // Parse command line arguments
