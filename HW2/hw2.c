@@ -41,6 +41,9 @@ int total_bursts;
 int lottery_tickets[MAX_TICKETS];
 int ticket_index;
 int total_number_of_tickets;
+int all_finished;
+
+void exitThread(int id);
 
 void printStatus(int print_type) {
   if (print_type == 0) {
@@ -58,8 +61,8 @@ void printStatus(int print_type) {
       printf("\n");
     }
     printf("\n");
-  } else {
-    printf("T0\tT1\tT2\tT3\tT4\tT5\tT6\n");
+  } else if (print_type == 1) {
+    // printf("\nT0\tT1\tT2\tT3\tT4\tT5\tT6\n");
 
     int states[MAX_THREADS] = {0, 0, 0, 0, 0, 0, 0};
     for (int i = 0; i < MAX_THREADS; i++) {
@@ -73,18 +76,40 @@ void printStatus(int print_type) {
       }
     }
 
+    int ready = 0;
+    int first_printed = 0;
     printf("\tready>");
     for (int i = 0; i < MAX_THREADS; i++) {
       if (states[i] == READY) {
-        printf("T%d ", i);
+        ready++;
+        if (first_printed) {
+          printf(",");
+        }
+        printf("T%d", i);
+        first_printed = 1;
       }
     }
 
+    for (int i = 0; i < MAX_THREADS - ready; i++) {
+      printf("   ");
+    }
+
+    int finished = 0;
+    first_printed = 0;
     printf("\tfinished>");
     for (int i = 0; i < MAX_THREADS; i++) {
       if (states[i] == FINISHED) {
-        printf("T%d ", i);
+        finished++;
+        if (first_printed) {
+          printf(",");
+        }
+        printf("T%d", i);
+        first_printed = 1;
       }
+    }
+
+    for (int i = 0; i < MAX_THREADS - finished; i++) {
+      printf("   ");
     }
 
     printf("\t\tIO>");
@@ -94,6 +119,8 @@ void printStatus(int print_type) {
       }
     }
     printf("\n");
+  } else if (print_type == 2) {
+    printf("T0\tT1\tT2\tT3\tT4\tT5\tT6\n");
   }
 }
 
@@ -106,6 +133,7 @@ void determineNumberOfTickets() {
   }
 
   printf("Total bursts: %d\n", total_bursts);
+  printf("\n");
 
   for (int i = 0; i < MAX_TICKETS; i++) {
     lottery_tickets[i] = -1;
@@ -114,10 +142,8 @@ void determineNumberOfTickets() {
   ticket_index = 0;
   total_number_of_tickets = 0;
   for (int i = 0; i < MAX_THREADS; i++) {
-    int ticket =
-        (int)((float)(cpu_bursts[i][0] + cpu_bursts[i][1] + cpu_bursts[i][2] +
-                      io_bursts[i][0] + io_bursts[i][1] + io_bursts[i][2]) /
-              total_bursts * 100);
+    int ticket = (cpu_bursts[i][0] + cpu_bursts[i][1] + cpu_bursts[i][2] +
+                  io_bursts[i][0] + io_bursts[i][1] + io_bursts[i][2]);
     threads[i]->ticket_number = ticket;
 
     for (int j = ticket_index; j < ticket_index + ticket; j++) {
@@ -128,35 +154,173 @@ void determineNumberOfTickets() {
   }
 }
 
-void PWFScheduler() {
-  // Pick a random number in ticket index
-  int random_number = -1;
-  int state = IO;
-  int selected_thread = -1;
+void checkIO(int wait) {
+  if (wait > WAIT_TIME) {
+    wait = WAIT_TIME;
+  }
 
-  while (random_number == -1 && state == IO) {
-    random_number = rand() % ticket_index;
-    selected_thread = lottery_tickets[random_number];
-    state = threads[selected_thread]->state;
+  // Check IO
+  for (int i = 0; i < MAX_THREADS; i++) {
+    int temp_state = threads[i]->state;
+
+    // If thread is finished
+    if (temp_state != IO) {
+      continue;
+    }
+
+    int temp_all_bursts = threads[i]->all_bursts;
+    int temp_cpu1 = cpu_bursts[i][0];
+    int temp_cpu2 = cpu_bursts[i][1];
+    int temp_cpu3 = cpu_bursts[i][2];
+
+    int temp_io1 = io_bursts[i][0];
+    int temp_io2 = io_bursts[i][1];
+    int temp_io3 = io_bursts[i][2];
+
+    int current_io1 = threads[i]->io_bursts[0];
+    int current_io2 = threads[i]->io_bursts[1];
+    int current_io3 = threads[i]->io_bursts[2];
+
+    int temp_first = temp_cpu1 + temp_io1;
+    int temp_second = temp_cpu2 + temp_io2;
+    int temp_third = temp_cpu3 + temp_io3;
+
+    int temp_wait = 0;
+    int temp_check = 0;
+    int temp_from = 0;
+
+    // If thread is in IO state and we are in the first IO burst
+    if (temp_all_bursts < temp_first) {
+      if (current_io1 > wait) {
+        threads[i]->io_bursts[0] -= wait;
+        temp_wait = wait;
+        temp_check = 1;
+      } else {
+        threads[i]->io_bursts[0] -= current_io1;
+        temp_wait = current_io1;
+        temp_check = 2;
+      }
+      temp_from = 1;
+
+    }
+    // If thread is in IO state and we are in the second IO burst
+    else if (temp_all_bursts < temp_first + temp_second) {
+      if (current_io2 > wait) {
+        threads[i]->io_bursts[1] -= wait;
+        temp_wait = wait;
+        temp_check = 1;
+      } else {
+        threads[i]->io_bursts[1] -= current_io2;
+        temp_wait = current_io2;
+        temp_check = 2;
+      }
+      temp_from = 2;
+
+    }
+
+    // If thread is in IO state and we are in the third IO burst
+    else if (temp_all_bursts < temp_first + temp_second + temp_third) {
+      if (current_io3 > wait) {
+        threads[i]->io_bursts[2] -= wait;
+        temp_wait = wait;
+        temp_check = 1;
+      } else {
+        threads[i]->io_bursts[2] -= current_io3;
+        temp_wait = current_io3;
+        temp_check = 2;
+      }
+      temp_from = 3;
+    }
+
+    if (temp_check != 0) {
+      threads[i]->all_bursts += temp_wait;
+      threads[i]->ticket_number -= temp_wait;
+
+      if (temp_check == 1) {
+        threads[i]->state = IO;
+        break;
+      } else if (temp_check == 2) {
+        threads[i]->state = READY;
+        if (temp_from == 3) {
+          exitThread(i);
+          return;
+        }
+
+        if (wait == 0) {
+          break;
+        }
+        wait -= temp_wait;
+      }
+    }
+  }
+}
+
+// Print step of process and wait for 1 second
+void printStep(int wait, int selected_thread, int check) {
+  for (int val = wait; val > check; val--) {
+    for (int j = 0; j < selected_thread; j++) {
+      printf("\t");
+    }
+    printf("%d\n", val - 1);
+    sleep(0);
+  }
+}
+
+void PWFScheduler() {
+  // Check if all threads are finished
+  all_finished = 0;
+  int all_io = 0;
+  for (int i = 0; i < MAX_THREADS; i++) {
+    if (threads[i]->state == FINISHED) {
+      all_finished++;
+    }
+
+    if (threads[i]->state == IO) {
+      all_io++;
+    }
+  }
+
+  // Pick a random number in ticket index
+  int random_number = rand() % ticket_index;
+  int selected_thread = lottery_tickets[random_number];
+  int state = threads[selected_thread]->state;
+
+  if (all_io == 2 && all_finished == MAX_THREADS - 2) {
+    checkIO(WAIT_TIME);
+
+  }
+
+  else if (all_finished == MAX_THREADS - 1 && all_io == 1) {
+    // Last thread is in IO
+    for (int i = 0; i < MAX_THREADS; i++) {
+      if (threads[i]->state == READY) {
+        selected_thread = i;
+        state = threads[i]->state;
+        return;
+      }
+
+      if (threads[i]->state == IO) {
+        exitThread(i);
+        return;
+      }
+    }
+  } else {
+    while (state != READY) {
+      selected_thread += 1;
+      selected_thread %= MAX_THREADS;
+      state = threads[selected_thread]->state;
+    }
   }
 
   if (threads[selected_thread]->state == READY) {
     threads[selected_thread]->state = RUNNING;
-    threads[selected_thread]->ticket_number -= 1;
     total_number_of_tickets--;
   }
-  printf("Running thread: %d\n", selected_thread);
+
   // printStatus(0);
   printStatus(1);
 
   int all_bursts = threads[selected_thread]->all_bursts;
-  int cpu1_current = threads[selected_thread]->cpu_bursts[0];
-  int cpu2_current = threads[selected_thread]->cpu_bursts[1];
-  int cpu3_current = threads[selected_thread]->cpu_bursts[2];
-
-  int io1_current = threads[selected_thread]->io_bursts[0];
-  int io2_current = threads[selected_thread]->io_bursts[1];
-  int io3_current = threads[selected_thread]->io_bursts[2];
 
   int cpu1 = cpu_bursts[selected_thread][0];
   int cpu2 = cpu_bursts[selected_thread][1];
@@ -171,47 +335,53 @@ void PWFScheduler() {
   int third = cpu_bursts[selected_thread][2] + io_bursts[selected_thread][2];
   int wait = 0;
 
-  if (all_bursts == cpu1) {
-  }
-
-  else if (all_bursts < cpu1) {
+  // If we are in the first CPU burst
+  if (all_bursts < cpu1) {
     wait = cpu1 - all_bursts;
     if (wait > WAIT_TIME) {
-      threads[selected_thread]->all_bursts += WAIT_TIME;
       threads[selected_thread]->cpu_bursts[0] -= WAIT_TIME;
-      threads[selected_thread]->state = READY;
     } else {
-      threads[selected_thread]->all_bursts += wait;
       threads[selected_thread]->cpu_bursts[0] -= wait;
-      threads[selected_thread]->state = IO;
     }
 
   }
 
+  // If we are in the second CPU burst
   else if (all_bursts < first + cpu2) {
     wait = first + cpu2 - all_bursts;
     if (wait > WAIT_TIME) {
-      threads[selected_thread]->all_bursts += WAIT_TIME;
       threads[selected_thread]->cpu_bursts[1] -= WAIT_TIME;
     } else {
-      threads[selected_thread]->all_bursts += wait;
       threads[selected_thread]->cpu_bursts[1] -= wait;
     }
-    threads[selected_thread]->state = READY;
   }
+
+  // If we are in the third CPU burst
+  else if (all_bursts < first + second + cpu3) {
+    wait = first + second + cpu3 - all_bursts;
+    if (wait > WAIT_TIME) {
+      threads[selected_thread]->cpu_bursts[2] -= WAIT_TIME;
+    } else {
+      threads[selected_thread]->cpu_bursts[2] -= wait;
+    }
+  }
+
+  checkIO(wait);
 
   int check = 0;
   if (wait > WAIT_TIME) {
+    threads[selected_thread]->all_bursts += WAIT_TIME;
+    threads[selected_thread]->ticket_number -= WAIT_TIME;
+    threads[selected_thread]->state = READY;
     check = wait - WAIT_TIME;
+  } else if (wait <= WAIT_TIME && threads[selected_thread]->state == RUNNING) {
+    threads[selected_thread]->all_bursts += wait;
+    threads[selected_thread]->ticket_number -= wait;
+    threads[selected_thread]->state = IO;
+    check = 0;
   }
 
-  printf("Thread: %d Wait: %d\n", selected_thread, wait);
-  for (int val = wait; val > check; val--) {
-    for (int j = 0; j < selected_thread; j++) {
-      printf("\t");
-    }
-    printf("%d\n", val);
-  }
+  printStep(wait, selected_thread, check);
 }
 
 int selectThread() {
@@ -224,6 +394,7 @@ int selectThread() {
   }
 }
 
+// Initialize threads
 void initializeThread() {
   for (int i = 0; i < MAX_THREADS; i++) {
     threads[i] = malloc(sizeof(struct ThreadInfo));
@@ -241,14 +412,20 @@ void initializeThread() {
   }
 }
 
+// Create thread
 int createThread() {
   for (int i = 0; i < MAX_THREADS; i++) {
     if (threads[i]->state == EMPTY) {
+      // Get context
       ucontext_t *uc = &threads[i]->context;
 
       getcontext(uc);
+
+      // Set context values
       uc->uc_stack.ss_sp = malloc(STACK_SIZE);
       uc->uc_stack.ss_size = STACK_SIZE;
+
+      // Set context link to main context
       uc->uc_link = &main_uc;
 
       if (uc->uc_stack.ss_sp == NULL) {
@@ -256,7 +433,10 @@ int createThread() {
         return (1);
       }
 
+      // Make context and set function to run
       makecontext(uc, (void (*)(void))PWFScheduler, 1);
+
+      // Set state to READY
       threads[i]->state = READY;
       return i;
     }
@@ -264,40 +444,58 @@ int createThread() {
   return -1;
 }
 
+// Run thread
 void runThread(int signal) {
+  // Pick proper thread
   int id = selectThread();
+
+  // Get context
   ucontext_t *uc = &threads[id]->context;
 
   getcontext(uc);
 
+  // Set context values
   makecontext(uc, (void (*)(void))PWFScheduler, 1);
+
+  // Swap context
   swapcontext(&main_uc, &threads[id]->context);
 }
 
+// Exit thread
 void exitThread(int id) {
-  if (threads[id]->state == RUNNING) {
-    printf("Exiting thread %d\n", id);
+  // If we reached the last thread
+  if (all_finished == MAX_THREADS - 1) {
+    // Increase all bursts
+    threads[id]->all_bursts += threads[id]->io_bursts[2];
+
+    // Decrease Ticket
+    threads[id]->ticket_number -= threads[id]->io_bursts[2];
+
+    // Decrease IO burst
+    threads[id]->io_bursts[2] -= threads[id]->io_bursts[2];
+
+    // Finalize remaining thread
     threads[id]->state = FINISHED;
-    free(threads[id]->context.uc_stack.ss_sp);
-    swapcontext(&threads[id]->context, &threads[0]->context);
+
+    // Increase all finished
+    all_finished++;
+
+    // printStatus(0);
+    printStatus(1);
+
+    // If we are not in the last thread
+  } else {
+    // Change state to FINISHED
+    threads[id]->state = FINISHED;
   }
+
+  // Free stack
+  free(threads[id]->context.uc_stack.ss_sp);
 }
 
-void printThreadStates() {
-  printf("running>");
-
-  for (int i = 0; i < MAX_THREADS; i++) {
-    if (threads[i]->state == RUNNING) {
-      printf("T%d", i);
-    }
-  }
-
-  printf("\t");
-
-  printf("ready>");
-}
-
+// Print input data
 void printInputData() {
+  // Print CPU and IO bursts for each thread
   printf("TID\tCPU1\tCPU2\tCPU3\tIO1\tIO2\tIO3\n");
   for (int i = 0; i < MAX_THREADS; i++) {
     printf("T%d\t", i);
@@ -312,18 +510,24 @@ void printInputData() {
   printf("\n");
 }
 
+// Read input data from txt file
 void readInputFromTxt() {
   FILE *fp;
+
+  // File name
   char filename[] = "input.txt";
   int cpu1, cpu2, cpu3, io1, io2, io3;
 
+  // Open file
   fp = fopen(filename, "r");
 
+  // If file does not exist
   if (fp == NULL) {
     perror("Error while opening the file.\n");
     exit(EXIT_FAILURE);
   }
 
+  // Read input data
   int thread_number = 0;
   while (fscanf(fp, "%d %d %d %d %d %d", &cpu1, &cpu2, &cpu3, &io1, &io2,
                 &io3) != EOF) {
@@ -338,29 +542,40 @@ void readInputFromTxt() {
     thread_number++;
   }
 
+  // Close file
   fclose(fp);
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc) {
+  // Read input data from txt file
   readInputFromTxt();
+
+  // Print input data
   printInputData();
 
+  // Get main context
   getcontext(&main_uc);
 
+  // Initialize threads
   initializeThread();
 
+  // Set signal handler
   signal(SIGALRM, runThread);
+
+  // Determine number of tickets initially
   determineNumberOfTickets();
 
+  // Create threads
   for (int i = 0; i < MAX_THREADS; i++) {
     createThread();
   }
 
-  printStatus(0);
-
-  while (1) {
-    sleep(3);
+  // printStatus(0);
+  printStatus(2);
+  all_finished = 0;
+  while (all_finished != MAX_THREADS) {
     raise(SIGALRM);
   }
+
   return 0;
 }
