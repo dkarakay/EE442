@@ -45,6 +45,7 @@ int all_finished;
 
 void exitThread(int id);
 
+// Print status of threads
 void printStatus(int print_type) {
   if (print_type == 0) {
     printf("TID\tBursts\tState\tTickets\tCPU1\tIO1\tCPU2\tIO2\tCPU3\tIO3\n");
@@ -62,8 +63,6 @@ void printStatus(int print_type) {
     }
     printf("\n");
   } else if (print_type == 1) {
-    // printf("\nT0\tT1\tT2\tT3\tT4\tT5\tT6\n");
-
     int states[MAX_THREADS] = {0, 0, 0, 0, 0, 0, 0};
     for (int i = 0; i < MAX_THREADS; i++) {
       states[i] = threads[i]->state;
@@ -124,6 +123,7 @@ void printStatus(int print_type) {
   }
 }
 
+// Determine number of tickets initially for lottery scheduling
 void determineNumberOfTickets() {
   total_bursts = 0;
   for (int i = 0; i < MAX_THREADS; i++) {
@@ -141,6 +141,8 @@ void determineNumberOfTickets() {
 
   ticket_index = 0;
   total_number_of_tickets = 0;
+
+  // Determine number of tickets for each thread
   for (int i = 0; i < MAX_THREADS; i++) {
     int ticket = (cpu_bursts[i][0] + cpu_bursts[i][1] + cpu_bursts[i][2] +
                   io_bursts[i][0] + io_bursts[i][1] + io_bursts[i][2]);
@@ -154,6 +156,7 @@ void determineNumberOfTickets() {
   }
 }
 
+// Check IO bursts
 void checkIO(int wait) {
   if (wait > WAIT_TIME) {
     wait = WAIT_TIME;
@@ -168,6 +171,7 @@ void checkIO(int wait) {
       continue;
     }
 
+    // Temp variables
     int temp_all_bursts = threads[i]->all_bursts;
     int temp_cpu1 = cpu_bursts[i][0];
     int temp_cpu2 = cpu_bursts[i][1];
@@ -191,10 +195,12 @@ void checkIO(int wait) {
 
     // If thread is in IO state and we are in the first IO burst
     if (temp_all_bursts < temp_first) {
+      // If we are in the first IO burst and we have to wait more than 3
       if (current_io1 > wait) {
         threads[i]->io_bursts[0] -= wait;
         temp_wait = wait;
         temp_check = 1;
+        // If we are in the first IO burst and we will finish IO
       } else {
         threads[i]->io_bursts[0] -= current_io1;
         temp_wait = current_io1;
@@ -205,10 +211,12 @@ void checkIO(int wait) {
     }
     // If thread is in IO state and we are in the second IO burst
     else if (temp_all_bursts < temp_first + temp_second) {
+      // If we are in the second IO burst and we have to wait more than 3
       if (current_io2 > wait) {
         threads[i]->io_bursts[1] -= wait;
         temp_wait = wait;
         temp_check = 1;
+        // If we are in the second IO burst and we will finish IO
       } else {
         threads[i]->io_bursts[1] -= current_io2;
         temp_wait = current_io2;
@@ -220,10 +228,12 @@ void checkIO(int wait) {
 
     // If thread is in IO state and we are in the third IO burst
     else if (temp_all_bursts < temp_first + temp_second + temp_third) {
+      // If we are in the third IO burst and we have to wait more than 3
       if (current_io3 > wait) {
         threads[i]->io_bursts[2] -= wait;
         temp_wait = wait;
         temp_check = 1;
+        // If we are in the third IO burst and we will finish IO
       } else {
         threads[i]->io_bursts[2] -= current_io3;
         temp_wait = current_io3;
@@ -233,15 +243,20 @@ void checkIO(int wait) {
     }
 
     if (temp_check != 0) {
+      // Increase all bursts and decrease ticket number
       threads[i]->all_bursts += temp_wait;
       threads[i]->ticket_number -= temp_wait;
 
+      // We need to wait more
       if (temp_check == 1) {
         threads[i]->state = IO;
         break;
+        // We finished IO
       } else if (temp_check == 2) {
         threads[i]->state = READY;
+        // If we are in the last IO burst
         if (temp_from == 3) {
+          // Exit thread
           exitThread(i);
           return;
         }
@@ -266,6 +281,7 @@ void printStep(int wait, int selected_thread, int check) {
   }
 }
 
+// Lottery scheduling
 void PWFScheduler() {
   // Check if all threads are finished
   all_finished = 0;
@@ -285,11 +301,13 @@ void PWFScheduler() {
   int selected_thread = lottery_tickets[random_number];
   int state = threads[selected_thread]->state;
 
+  // 2 threads are in IO and these are the last 2 threads
   if (all_io == 2 && all_finished == MAX_THREADS - 2) {
     checkIO(WAIT_TIME);
 
   }
 
+  // If last thread is in IO and all other threads are finished
   else if (all_finished == MAX_THREADS - 1 && all_io == 1) {
     // Last thread is in IO
     for (int i = 0; i < MAX_THREADS; i++) {
@@ -305,6 +323,7 @@ void PWFScheduler() {
       }
     }
   } else {
+    // If selected thread is not ready pick another thread
     while (state != READY) {
       selected_thread += 1;
       selected_thread %= MAX_THREADS;
@@ -312,14 +331,16 @@ void PWFScheduler() {
     }
   }
 
+  // If selected thread is ready
   if (threads[selected_thread]->state == READY) {
     threads[selected_thread]->state = RUNNING;
     total_number_of_tickets--;
   }
 
-  // printStatus(0);
+  // Print status
   printStatus(1);
 
+  // Variables
   int all_bursts = threads[selected_thread]->all_bursts;
 
   int cpu1 = cpu_bursts[selected_thread][0];
@@ -338,8 +359,10 @@ void PWFScheduler() {
   // If we are in the first CPU burst
   if (all_bursts < cpu1) {
     wait = cpu1 - all_bursts;
+    // If we have to wait more than 3 we wait 3
     if (wait > WAIT_TIME) {
       threads[selected_thread]->cpu_bursts[0] -= WAIT_TIME;
+      // If we have to wait less than 3 we wait that much
     } else {
       threads[selected_thread]->cpu_bursts[0] -= wait;
     }
@@ -349,8 +372,10 @@ void PWFScheduler() {
   // If we are in the second CPU burst
   else if (all_bursts < first + cpu2) {
     wait = first + cpu2 - all_bursts;
+    // If we have to wait more than 3 we wait 3
     if (wait > WAIT_TIME) {
       threads[selected_thread]->cpu_bursts[1] -= WAIT_TIME;
+      // If we have to wait less than 3 we wait that much
     } else {
       threads[selected_thread]->cpu_bursts[1] -= wait;
     }
@@ -359,21 +384,27 @@ void PWFScheduler() {
   // If we are in the third CPU burst
   else if (all_bursts < first + second + cpu3) {
     wait = first + second + cpu3 - all_bursts;
+    // If we have to wait more than 3 we wait 3
     if (wait > WAIT_TIME) {
       threads[selected_thread]->cpu_bursts[2] -= WAIT_TIME;
+      // If we have to wait less than 3 we wait that much
     } else {
       threads[selected_thread]->cpu_bursts[2] -= wait;
     }
   }
 
+  // Check IO
   checkIO(wait);
 
   int check = 0;
+
+  // If we have to wait more than 3 we wait 3
   if (wait > WAIT_TIME) {
     threads[selected_thread]->all_bursts += WAIT_TIME;
     threads[selected_thread]->ticket_number -= WAIT_TIME;
     threads[selected_thread]->state = READY;
     check = wait - WAIT_TIME;
+    // If we have to wait less than 3 we wait that much
   } else if (wait <= WAIT_TIME && threads[selected_thread]->state == RUNNING) {
     threads[selected_thread]->all_bursts += wait;
     threads[selected_thread]->ticket_number -= wait;
@@ -381,9 +412,11 @@ void PWFScheduler() {
     check = 0;
   }
 
+  // Print steps and wait for 1 second
   printStep(wait, selected_thread, check);
 }
 
+// Select suitable thread
 int selectThread() {
   int id = -2;
   for (int i = 0; i < MAX_THREADS; i++) {
@@ -570,11 +603,23 @@ int main(int argc) {
     createThread();
   }
 
-  // printStatus(0);
   printStatus(2);
+
+  // Set all finished to 0
   all_finished = 0;
+
+  // Set alarm till all threads are finished
   while (all_finished != MAX_THREADS) {
     raise(SIGALRM);
+  }
+
+  // Free main context
+  free(main_uc.uc_stack.ss_sp);
+  free(main_uc.uc_link);
+
+  // Free threads
+  for (int i = 0; i < MAX_THREADS; i++) {
+    free(threads[i]);
   }
 
   return 0;
