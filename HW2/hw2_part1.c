@@ -4,10 +4,14 @@
  * EE442 - HW2 - Part 1
  */
 
+// If you want to observe entire Table every 3 seconds
+// Remove comment from line 343
+
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/time.h>
+#include <time.h>
 #include <ucontext.h>
 #include <unistd.h>
 
@@ -51,7 +55,7 @@ void printStatus(int print_type) {
       printf("T%d\t", i);
       printf("%d\t", threads[i]->all_bursts);
       printf("%d\t", threads[i]->state);
-      printf("%d\t", threads[i]->ticket_number);
+      printf("%d/%d\t", threads[i]->ticket_number, total_number_of_tickets);
       for (int j = 0; j < 3; j++) {
         printf("%d\t", threads[i]->cpu_bursts[j]);
         printf("%d\t", threads[i]->io_bursts[j]);
@@ -130,7 +134,7 @@ void determineRemainingBursts() {
                     threads[i]->io_bursts[1] + threads[i]->io_bursts[2];
   }
 
-  printf("Total bursts: %d\n", total_bursts);
+  printf("Total Tickets: %d\n", total_bursts);
   printf("\n");
 
   for (int i = 0; i < MAX_TICKETS; i++) {
@@ -335,7 +339,7 @@ void SRTFScheduler() {
     total_number_of_tickets--;
   }
 
-  // Print All Table only for DEBUG
+  // Only for observing entire table DEBUG
   // printStatus(0);
 
   // Print Status
@@ -583,6 +587,10 @@ void readInputFromTxt() {
 }
 
 int main(int argc) {
+  // Seed random number generator
+  unsigned int seed = time(NULL);
+  srand(seed);
+
   // Read input data from txt file
   readInputFromTxt();
 

@@ -4,10 +4,14 @@
  * EE442 - HW2 - Part 2
  */
 
+// If you want to observe entire Table every 3 seconds
+// Remove comment from line 332
+
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/time.h>
+#include <time.h>
 #include <ucontext.h>
 #include <unistd.h>
 
@@ -28,6 +32,7 @@ struct ThreadInfo {
   int cpu_bursts[3];
   int io_bursts[3];
   int remaining;
+  int remaining_constant;
   int all_bursts;
 };
 
@@ -49,7 +54,12 @@ void printStatus(int print_type) {
       printf("T%d\t", i);
       printf("%d\t", threads[i]->all_bursts);
       printf("%d\t", threads[i]->state);
-      printf("%d\t\t", threads[i]->remaining);
+      if (threads[i]->remaining == MAX_NUMBER) {
+        printf("IO\t\t");
+      } else {
+        printf("%d/%d\t\t", threads[i]->remaining,
+               threads[i]->remaining_constant);
+      }
       for (int j = 0; j < 3; j++) {
         printf("%d\t", threads[i]->cpu_bursts[j]);
         printf("%d\t", threads[i]->io_bursts[j]);
@@ -134,14 +144,19 @@ void determineRemainingBursts() {
   // Determine number of tickets for each thread
   for (int i = 0; i < MAX_THREADS; i++) {
     int remaining = 0;
+    // If 1st CPU Burst is not 0 -> set to remaining
     if (cpu_bursts[i][0] != 0) {
       remaining = cpu_bursts[i][0];
+      // If 2nd CPU Burst is not 0 -> set to remaining
     } else if (cpu_bursts[i][1] != 0) {
       remaining = cpu_bursts[i][1];
+      // If 3rd CPU Burst is not 0 -> set to remaining
     } else if (cpu_bursts[i][2] != 0) {
       remaining = cpu_bursts[i][2];
     }
+    // Set remaining
     threads[i]->remaining = remaining;
+    threads[i]->remaining_constant = remaining;
   }
 }
 
@@ -151,7 +166,7 @@ void checkIO() {
   // Check IO
   for (int i = 0; i < MAX_THREADS; i++) {
     int temp_state = threads[i]->state;
-    // If thread is finished
+    // If thread is not in IO state -> continue
     if (temp_state != IO) {
       continue;
     }
@@ -179,8 +194,9 @@ void checkIO() {
 
     // If thread is in IO state and we are in the first IO burst
     if (temp_all_bursts < temp_first) {
-      // If we are in the first IO burst and we do not finish IO
+      // Decrease IO burst
       threads[i]->io_bursts[0] -= wait;
+      // If we are in the first IO burst and we do not finish IO
       if (threads[i]->io_bursts[0] != 0) {
         temp_check = 1;
         // If we are in the first IO burst and we will finish IO
@@ -192,8 +208,9 @@ void checkIO() {
     }
     // If thread is in IO state and we are in the second IO burst
     else if (temp_all_bursts < temp_first + temp_second) {
+      // Decrease IO burst
       threads[i]->io_bursts[1] -= wait;
-      // If we are in the second IO burst and we have to wait more than 3
+      // If we are in the second IO burst and we do not finish IO
       if (threads[i]->io_bursts[1] != 0) {
         temp_check = 1;
         // If we are in the second IO burst and we will finish IO
@@ -206,8 +223,9 @@ void checkIO() {
 
     // If thread is in IO state and we are in the third IO burst
     else if (temp_all_bursts < temp_first + temp_second + temp_third) {
+      // Decrease IO burst
       threads[i]->io_bursts[2] -= wait;
-      // If we are in the third IO burst and we have to wait more than 3
+      // If we are in the third IO burst and we do not finish IO
       if (threads[i]->io_bursts[2] != 0) {
         temp_check = 1;
         // If we are in the third IO burst and we will finish IO
@@ -218,24 +236,30 @@ void checkIO() {
     }
 
     if (temp_check != 0) {
-      // Increase all bursts and decrease ticket number
+      // Increase all bursts
       threads[i]->all_bursts += wait;
 
       // We need to wait more
       if (temp_check == 1) {
+        // Set state to IO
         threads[i]->state = IO;
         break;
         // We finished IO
       } else if (temp_check == 2) {
+        // Set state to READY
         threads[i]->state = READY;
 
+        // If we finished first IO burst
         if (temp_from == 1) {
           threads[i]->remaining = temp_cpu2;
+          threads[i]->remaining_constant = temp_cpu2;
+          // If we finished second IO burst
         } else if (temp_from == 2) {
           threads[i]->remaining = temp_cpu3;
+          threads[i]->remaining_constant = temp_cpu3;
         }
-        // If we are in the last IO burst
-        if (temp_from == 3) {
+        // If we finished third IO burst
+        else if (temp_from == 3) {
           // Exit thread
           exitThread(i);
           return;
@@ -251,7 +275,7 @@ void printStep(int selected_thread, int val) {
     printf("\t");
   }
   printf("%d\n", val);
-  sleep(0);
+  sleep(1);
 }
 
 // Shortest remaining time first scheduler
@@ -269,12 +293,14 @@ void SRTFScheduler() {
     }
   }
 
+  // If sum of all threads and all IO threads is equal to MAX_THREADS
+  // Only IO threads are left
   if (all_io + all_finished == MAX_THREADS) {
     checkIO();
     return;
   }
 
-  // Check the minimum remaining burst
+  // Find the minimum remaining burst
   int min_remaining = 100000;
   int min_index = -1;
   for (int i = 0; i < MAX_THREADS; i++) {
@@ -285,29 +311,26 @@ void SRTFScheduler() {
       }
     }
   }
+  // Set selected thread
   int selected_thread = min_index;
 
-  // Get running indexes
+  // Loop for WAIT_TIME (3 seconds)
   for (int t = 0; t < WAIT_TIME; t++) {
-    /*printf("Selected thread: %d status: %d\n", selected_thread,
-           threads[selected_thread]->state);*/
+    // If selected thread is in IO state
     if (threads[selected_thread]->state == IO) {
       break;
     }
-    // If there is no thread to run
-    /*if (min_index == -1) {
-      checkIO(WAIT_TIME);
-      return;
-    }*/
 
+    // If selected thread is in READY state -> set it to RUNNING
     if (threads[selected_thread]->state == READY) {
       threads[selected_thread]->state = RUNNING;
     }
 
     // Print status
-
     if (t % 3 == 0) {
-      printStatus(0);
+      // Only for observing entire table DEBUG
+      // printStatus(0);
+
       printStatus(1);
     }
 
@@ -331,50 +354,78 @@ void SRTFScheduler() {
 
     // If we are in the first CPU burst
     if (all_bursts < cpu1) {
+      // Decrease CPU burst
       threads[selected_thread]->cpu_bursts[0] -= wait;
 
+      // If we are in the first CPU burst and we finish CPU burst
       if (threads[selected_thread]->cpu_bursts[0] == 0) {
+        // Set state to IO
         threads[selected_thread]->state = IO;
+        // Set remaining to MAX_NUMBER not to be selected again
         threads[selected_thread]->remaining = MAX_NUMBER;
+        // If we are in the first CPU burst and we do not finish CPU burst
       } else {
+        // Set state to READY
         threads[selected_thread]->state = READY;
+        // Decrease remaining
         threads[selected_thread]->remaining -= wait;
       }
 
+      // Set val to CPU burst for printing
       val = threads[selected_thread]->cpu_bursts[0];
 
     }
 
     // If we are in the second CPU burst
     else if (all_bursts < first + cpu2) {
+      // Decrease CPU burst
       threads[selected_thread]->cpu_bursts[1] -= wait;
+
+      // If we are in the second CPU burst and we finish CPU burst
       if (threads[selected_thread]->cpu_bursts[1] == 0) {
+        // Set state to IO
         threads[selected_thread]->state = IO;
+        // Set remaining to MAX_NUMBER not to be selected again
         threads[selected_thread]->remaining = MAX_NUMBER;
+
+        // If we are in the second CPU burst and we do not finish CPU burst
       } else {
+        // Set state to READY
         threads[selected_thread]->state = READY;
+        // Decrease remaining
         threads[selected_thread]->remaining -= wait;
       }
 
+      // Set val to CPU burst for printing
       val = threads[selected_thread]->cpu_bursts[1];
 
     }
 
     // If we are in the third CPU burst
     else if (all_bursts < first + second + cpu3) {
+      // Decrease CPU burst
       threads[selected_thread]->cpu_bursts[2] -= wait;
+
+      // If we are in the third CPU burst and we finish CPU burst
       if (threads[selected_thread]->cpu_bursts[2] == 0) {
+        // Set state to IO
         threads[selected_thread]->state = IO;
+        // Set remaining to MAX_NUMBER not to be selected again
         threads[selected_thread]->remaining = MAX_NUMBER;
 
+        // If we are in the third CPU burst and we do not finish CPU burst
       } else {
+        // Set state to READY
         threads[selected_thread]->state = READY;
+        // Decrease remaining
         threads[selected_thread]->remaining -= wait;
       }
 
+      // Set val to CPU burst for printing
       val = threads[selected_thread]->cpu_bursts[2];
     }
 
+    // If val is suitable for printing
     if (val != -1) {
       // Print steps and wait for 1 second
       printStep(selected_thread, val);
@@ -382,6 +433,7 @@ void SRTFScheduler() {
     // Check IO
     checkIO();
 
+    // Increase all_bursts
     threads[selected_thread]->all_bursts += wait;
   }
 }
@@ -413,6 +465,7 @@ void initializeThread() {
 
     threads[i]->all_bursts = 0;
     threads[i]->remaining = 0;
+    threads[i]->remaining_constant = 0;
   }
 }
 
@@ -499,6 +552,7 @@ void exitThread(int id) {
 
 // Print input data
 void printInputData() {
+  printf("Input: \n");
   // Print CPU and IO bursts for each thread
   printf("TID\tCPU1\tCPU2\tCPU3\tIO1\tIO2\tIO3\n");
   for (int i = 0; i < MAX_THREADS; i++) {
@@ -575,6 +629,8 @@ int main(int argc) {
     createThread();
   }
 
+  printStatus(0);
+  printf("\n");
   printStatus(2);
 
   // Set all finished to 0
@@ -585,7 +641,6 @@ int main(int argc) {
     raise(SIGALRM);
   }
 
-  /*
   // Free main context
   free(main_uc.uc_stack.ss_sp);
   free(main_uc.uc_link);
@@ -593,7 +648,7 @@ int main(int argc) {
   // Free threads
   for (int i = 0; i < MAX_THREADS; i++) {
     free(threads[i]);
-  }*/
+  }
 
   return 0;
 }
