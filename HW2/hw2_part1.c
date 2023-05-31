@@ -301,10 +301,10 @@ void PWFScheduler() {
   int selected_thread = lottery_tickets[random_number];
   int state = threads[selected_thread]->state;
 
-  // 2 threads are in IO and these are the last 2 threads
-  if (all_io == 2 && all_finished == MAX_THREADS - 2) {
+  // If only IO threads are left
+  if (all_io + all_finished == MAX_THREADS) {
     checkIO(WAIT_TIME);
-
+    return;
   }
 
   // If last thread is in IO and all other threads are finished
@@ -544,6 +544,7 @@ void printInputData() {
 }
 
 // Read input data from txt file
+// Details and structure of input.txt file is in the input_format.txt file
 void readInputFromTxt() {
   FILE *fp;
 
