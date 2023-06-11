@@ -104,7 +104,8 @@ int FindFreeFileListEntry(FileList *file_list) {
 
 int FindFileInList(FileList *file_list, char *file_name) {
     for (int i = 0; i < FILE_LIST_SIZE; i++) {
-        if (strcmp(file_list->file_list[i].filename, file_name) == 0) {
+        char *f_name = file_list->file_list[i].filename;
+        if (strcmp(f_name, file_name) == 0) {
             return i;
         }
     }
@@ -123,94 +124,112 @@ void Write(char *src_path, char *dest_file_name) {
     fseek(disk, sizeof(FAT), SEEK_SET);
     fread(t_file_list, sizeof(FileList), 1, disk);
 
-    Data *t_data = malloc(sizeof(Data));
-    fseek(disk, sizeof(FAT) + sizeof(FileList), SEEK_SET);
-    fread(t_data, sizeof(Data), 1, disk);
-
     FILE *src_file = fopen(src_path, "rb");
     if (src_file == NULL) {
         printf("Error: Could not open source file\n");
         return;
     }
 
-    // Find free FAT entries for the clusters
-    int file_size = 0;
-    int num_clusters = 0;
-    while (!feof(src_file)) {
-        DataBlock block;
-        int bytes_read = fread(block.data, 1, DATA_SIZE, src_file);
-        if (bytes_read > 0) {
-            num_clusters++;
-            file_size += bytes_read;
-        }
-    }
-
-    printf("File size: %.2f MB\n", (float)file_size / (1024 * 1024));
-
-    // Leave first FAT entry as it is
-    int free_fat_index = 1;
-    int last_fat_index = 0, first_fat_index = 0;
-    for (int i = 0; i < num_clusters; i++) {
-        free_fat_index = FindFreeFatEntry(t_fat, free_fat_index);
-        if (free_fat_index == -1) {
-            printf("Error: No free FAT entry\n");
-            return;
-        } else if (first_fat_index == 0) {
-            first_fat_index = free_fat_index;
-            printf("First FAT entry index: %d\n", first_fat_index);
-        }
-        t_fat->list_entries[last_fat_index].value = free_fat_index;
-        last_fat_index = free_fat_index;
-    }
-    t_fat->list_entries[last_fat_index].value = 0xFFFFFFFF;
-
-
-    printf("Last FAT entry index: %d\n", last_fat_index);
-    printf("Number of clusters: %d\n", num_clusters);
-
-    // Find free File List entry
-    int free_file_list_index = FindFreeFileListEntry(t_file_list);
-    if (free_file_list_index == -1) {
-        printf("Error: No free File List entry\n");
+    // Find free file list entry
+    int file_list_index = FindFreeFileListEntry(t_file_list);
+    if (file_list_index == -1) {
+        printf("Error: File list is full\n");
         return;
     }
 
-    // Update the File List with the file information
-    FileEntry file_entry;
-    strncpy(file_entry.filename, dest_file_name, FILE_NAME_SIZE);
-    file_entry.first_block = first_fat_index;
-    printf("First block: %d\n", file_entry.first_block);
-    file_entry.size = file_size;
-    t_file_list->file_list[free_file_list_index] = file_entry;
+    // Find free FAT entry
+    int fat_index = FindFreeFatEntry(t_fat, 1);
+    if (fat_index == -1) {
+        printf("Error: Disk is full\n");
+        return;
+    }
 
-    // Write the file data to the disk
-    fseek(disk,
-          sizeof(FAT) + sizeof(FileList) +
-              (file_entry.first_block - 1) * sizeof(Data),
-          SEEK_SET);
-    int bytes_written = 0;
-    fseek(src_file, 0, SEEK_SET);
-    while (!feof(src_file)) {
-        DataBlock block;
-        int bytes_read = fread(block.data, 1, DATA_SIZE, src_file);
-        if (bytes_read > 0) {
-            fwrite(block.data, 1, bytes_read, disk);
-            bytes_written += bytes_read;
+    printf("FAT index: %d\n", fat_index);
+
+    // Count free FAT entries
+    int free_fat_entries = 0;
+    for (int i = 0; i < FAT_SIZE; i++) {
+        if (t_fat->list_entries[i].value == 0x00000000) {
+            free_fat_entries++;
         }
     }
 
-    // Write the updated FAT and File List to the disk
+    printf("Free FAT entries: %d\n", free_fat_entries);
+
+    int f_size = 0;
+    int n_clusters = 0;
+    while (!feof(src_file)) {
+        DataBlock block;
+        int b_read = fread(block.data, 1, DATA_SIZE, src_file);
+        if (b_read > 0) {
+            n_clusters++;
+            f_size += b_read;
+        }
+    }
+
+    src_file = fopen(src_path, "rb");
+
+    printf("File size: %d\n", f_size);
+    printf("Num clusters: %d\n", n_clusters);
+
+    if (free_fat_entries < n_clusters) {
+        printf("Error: Not enough free space on disk\n");
+        return;
+    }
+
+    int num_clusters = 0;
+
+    // Write file to disk
+    FileEntry file_entry;
+    file_entry.first_block = fat_index;
+    file_entry.size = 0;
+    strncpy(file_entry.filename, dest_file_name, FILE_NAME_SIZE);
+
+    int data_index = fat_index;
+    while (!feof(src_file)) {
+        // Write data block to disk
+        DataBlock data_block;
+        int bytes_read = fread(data_block.data, 1, DATA_SIZE, src_file);
+        if (bytes_read == 0) {
+            break;
+        }
+        fseek(disk,
+              sizeof(FAT) + sizeof(FileList) + (data_index * sizeof(DataBlock)),
+              SEEK_SET);
+        fwrite(&data_block, sizeof(DataBlock), 1, disk);
+
+        // Update FAT
+        t_fat->list_entries[data_index].value =
+            (bytes_read < DATA_SIZE) ? 0xFFFFFFFF : data_index + 1;
+
+        if (bytes_read > 0) {
+            num_clusters++;
+        }
+
+        // Update file entry
+        file_entry.size += bytes_read;
+
+        // Move to next data block
+        data_index = t_fat->list_entries[data_index].value;
+    }
+
+    printf("File size: bytes: %d, clusters: %d\n", file_entry.size,
+           num_clusters);
+
+    // Update file list
+    t_file_list->file_list[file_list_index] = file_entry;
+
+    // Write FAT and File List to disk
     fseek(disk, 0, SEEK_SET);
     fwrite(t_fat, sizeof(FAT), 1, disk);
     fwrite(t_file_list, sizeof(FileList), 1, disk);
 
-    printf("%d bytes written to disk\n", bytes_written);
-
     fclose(src_file);
+    printf("File written to disk\n");
+
     fclose(disk);
     free(t_fat);
     free(t_file_list);
-    free(t_data);
 }
 void Read(char *src_file_name, char *dest_path) {
     disk = fopen(disk_location, "rb");
@@ -238,27 +257,29 @@ void Read(char *src_file_name, char *dest_path) {
         return;
     }
 
-    // Read the file data from the disk
-    int current_block_index = 0;
-    printf("First block index: %d\n", current_block_index);
-    while (current_block_index != 0xFFFFFFFF) {
-        printf("First block index: %d\n", current_block_index);
+    // Read file from disk
+    int data_index = t_file_list->file_list[file_index].first_block;
+    int remaining_size = t_file_list->file_list[file_index].size;
+    while (data_index != 0xFFFFFFFF && remaining_size > 0) {
+        // Read data block from disk
+        DataBlock data_block;
         fseek(disk,
-              sizeof(FAT) + sizeof(FileList) +
-                  (current_block_index - 1) * sizeof(Data),
+              sizeof(FAT) + sizeof(FileList) + (data_index * sizeof(DataBlock)),
               SEEK_SET);
-        DataBlock block;
-        fread(block.data, 1, DATA_SIZE, disk);
-        fwrite(block.data, 1, DATA_SIZE, dest_file);
-        current_block_index = t_fat->list_entries[current_block_index].value;
+        fread(&data_block, sizeof(DataBlock), 1, disk);
+
+        // Write data block to destination file
+        int bytes_to_write =
+            (remaining_size < DATA_SIZE) ? remaining_size : DATA_SIZE;
+        fwrite(data_block.data, 1, bytes_to_write, dest_file);
+
+        // Move to next data block
+        data_index = t_fat->list_entries[data_index].value;
+        remaining_size -= bytes_to_write;
     }
 
-    printf("File read successfully\n");
-
     fclose(dest_file);
-    fclose(disk);
-    free(t_fat);
-    free(t_file_list);
+    printf("File read from disk\n");
 }
 void PrintFAT() {
     disk = fopen(disk_location, "rb+");
