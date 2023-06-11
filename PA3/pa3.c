@@ -213,7 +213,7 @@ void Write(char *src_path, char *dest_file_name) {
         if (bytes_read < DATA_SIZE) {
             fat_value = 0xFFFFFFFF;
         } else {
-            fat_value = data_index + 1;
+            fat_value = FindFreeFatEntry(t_fat, data_index + 1);
         }
 
         if (t_fat->list_entries[data_index].value == 0x00000000) {
@@ -230,6 +230,11 @@ void Write(char *src_path, char *dest_file_name) {
         // Move to next data block
         data_index = t_fat->list_entries[data_index].value;
         data_index = Little2BigEndian(data_index);
+
+        /* data_index=FindFreeFatEntry(t_fat, data_index);
+         if (data_index == -1) {
+             return;
+         }*/
     }
 
     printf("File size: bytes: %d, clusters: %d\n", file_entry.size,
@@ -277,9 +282,14 @@ void Read(char *src_file_name, char *dest_path) {
         return;
     }
 
+    printf("File index: %d\n", file_index);
     // Read file from disk
     int data_index = t_file_list->file_list[file_index].first_block;
     int remaining_size = t_file_list->file_list[file_index].size;
+
+    printf("First data block: %d\n", data_index);
+    printf("File size: %d\n", remaining_size);
+
     while (data_index != 0xFFFFFFFF && remaining_size > 0) {
         // Read data block from disk
         DataBlock data_block;
@@ -295,6 +305,7 @@ void Read(char *src_file_name, char *dest_path) {
 
         // Move to next data block
         data_index = t_fat->list_entries[data_index].value;
+        data_index = Little2BigEndian(data_index);
         remaining_size -= bytes_to_write;
     }
 
