@@ -53,7 +53,7 @@ void Format() {
 
     // Create FAT
     FAT fat;
-    fat.list_entries[0].value = 0x0FFFFFFF;
+    fat.list_entries[0].value = 0xFFFFFFFF;
     for (int i = 1; i < FAT_SIZE; i++) {
         fat.list_entries[i].value = 0x00000000;
     }
@@ -110,6 +110,16 @@ int FindFileInList(FileList *file_list, char *file_name) {
         }
     }
     return -1;
+}
+
+uint32_t Big2LittleEndian(uint32_t value) {
+    return ((value & 0xFF) << 24) | ((value & 0xFF00) << 8) |
+           ((value & 0xFF0000) >> 8) | ((value & 0xFF000000) >> 24);
+}
+
+uint32_t Little2BigEndian(uint32_t value) {
+    return ((value & 0xFF) << 24) | ((value & 0xFF00) << 8) |
+           ((value & 0xFF0000) >> 8) | ((value & 0xFF000000) >> 24);
 }
 
 void Write(char *src_path, char *dest_file_name) {
@@ -199,8 +209,16 @@ void Write(char *src_path, char *dest_file_name) {
         fwrite(&data_block, sizeof(DataBlock), 1, disk);
 
         // Update FAT
-        t_fat->list_entries[data_index].value =
-            (bytes_read < DATA_SIZE) ? 0xFFFFFFFF : data_index + 1;
+        uint32_t fat_value;
+        if (bytes_read < DATA_SIZE) {
+            fat_value = 0xFFFFFFFF;
+        } else {
+            fat_value = data_index + 1;
+        }
+
+        if (t_fat->list_entries[data_index].value == 0x00000000) {
+            t_fat->list_entries[data_index].value = Big2LittleEndian(fat_value);
+        }
 
         if (bytes_read > 0) {
             num_clusters++;
@@ -211,6 +229,7 @@ void Write(char *src_path, char *dest_file_name) {
 
         // Move to next data block
         data_index = t_fat->list_entries[data_index].value;
+        data_index = Little2BigEndian(data_index);
     }
 
     printf("File size: bytes: %d, clusters: %d\n", file_entry.size,
@@ -234,11 +253,12 @@ void Write(char *src_path, char *dest_file_name) {
 void Read(char *src_file_name, char *dest_path) {
     disk = fopen(disk_location, "rb");
 
-    // Read from Disk
+    // Read from Disk FAT
     FAT *t_fat = malloc(sizeof(FAT));
     fseek(disk, 0, SEEK_SET);
     fread(t_fat, sizeof(FAT), 1, disk);
 
+    // Read from Disk File List
     FileList *t_file_list = malloc(sizeof(FileList));
     fseek(disk, sizeof(FAT), SEEK_SET);
     fread(t_file_list, sizeof(FileList), 1, disk);
@@ -281,6 +301,153 @@ void Read(char *src_file_name, char *dest_path) {
     fclose(dest_file);
     printf("File read from disk\n");
 }
+
+void List() {
+    disk = fopen(disk_location, "rb");
+
+    // Read from Disk File List
+    FileList *t_file_list = malloc(sizeof(FileList));
+    fseek(disk, sizeof(FAT), SEEK_SET);
+    fread(t_file_list, sizeof(FileList), 1, disk);
+
+    printf("Filename\tSize\n");
+    for (int i = 0; i < FILE_LIST_SIZE; i++) {
+        char *filename = t_file_list->file_list[i].filename;
+        int size = t_file_list->file_list[i].size;
+
+        if (filename[0] != '.' && filename[0] != '\0') {
+            printf("%-15s\t%d\n", filename, size);
+        }
+    }
+
+    fclose(disk);
+    free(t_file_list);
+}
+
+// Deletes a file from the disk
+void Delete(char *src_file_name) {
+    disk = fopen(disk_location, "rb+");
+
+    // Read from Disk FAT
+    FAT *t_fat = malloc(sizeof(FAT));
+    fseek(disk, 0, SEEK_SET);
+    fread(t_fat, sizeof(FAT), 1, disk);
+
+    // Read from Disk File List
+    FileList *t_file_list = malloc(sizeof(FileList));
+    fseek(disk, sizeof(FAT), SEEK_SET);
+    fread(t_file_list, sizeof(FileList), 1, disk);
+
+    printf("Filename to delete: %s\n", src_file_name);
+    // Find the file in the File List
+    int file_index = FindFileInList(t_file_list, src_file_name);
+    printf("File index: %d\n", file_index);
+    if (file_index == -1) {
+        printf("Error: File not found\n");
+        return;
+    }
+
+    // Free the FAT entries occupied by the file
+    int block_index = t_file_list->file_list[file_index].first_block;
+    printf("First block index: %d\n", block_index);
+    while (block_index != 0xFFFFFFFF) {
+        int next_block_index = t_fat->list_entries[block_index].value;
+        next_block_index = Little2BigEndian(next_block_index);
+        t_fat->list_entries[block_index].value = 0x00000000;
+        block_index = next_block_index;
+    }
+
+    // Remove the file from the file list
+    t_file_list->file_list[file_index].filename[0] = '\0';
+    t_file_list->file_list[file_index].first_block = 0;
+    t_file_list->file_list[file_index].size = 0;
+
+    printf("File deleted: %s\n", src_file_name);
+
+    // Write to Disk FAT
+    fseek(disk, 0, SEEK_SET);
+    fwrite(t_fat, sizeof(FAT), 1, disk);
+
+    // Write to Disk File List
+    fseek(disk, sizeof(FAT), SEEK_SET);
+    fwrite(t_file_list, sizeof(FileList), 1, disk);
+
+    fclose(disk);
+    free(t_fat);
+    free(t_file_list);
+}
+
+void SortA() {
+    disk = fopen(disk_location, "rb+");
+
+    // Read from Disk File List
+    FileList *t_file_list = malloc(sizeof(FileList));
+    fseek(disk, sizeof(FAT), SEEK_SET);
+    fread(t_file_list, sizeof(FileList), 1, disk);
+    fclose(disk);
+
+    // Sort file list by size in ascending order
+    for (int i = 0; i < FILE_LIST_SIZE - 1; i++) {
+        for (int j = i + 1; j < FILE_LIST_SIZE; j++) {
+            int i_size = t_file_list->file_list[i].size;
+            int j_size = t_file_list->file_list[j].size;
+
+            if (i_size > j_size) {
+                FileEntry temp = t_file_list->file_list[i];
+                t_file_list->file_list[i] = t_file_list->file_list[j];
+                t_file_list->file_list[j] = temp;
+            }
+        }
+    }
+
+    printf("Filename\tSize\n");
+    for (int i = 0; i < FILE_LIST_SIZE; i++) {
+        char *filename = t_file_list->file_list[i].filename;
+        int size = t_file_list->file_list[i].size;
+
+        if (filename[0] != '.' && filename[0] != '\0') {
+            printf("%-15s\t%d\n", filename, size);
+        }
+    }
+
+    free(t_file_list);
+}
+
+void SortD() {
+    disk = fopen(disk_location, "rb+");
+
+    // Read from Disk File List
+    FileList *t_file_list = malloc(sizeof(FileList));
+    fseek(disk, sizeof(FAT), SEEK_SET);
+    fread(t_file_list, sizeof(FileList), 1, disk);
+    fclose(disk);
+
+    // Sort file list by size in ascending order
+    for (int i = 0; i < FILE_LIST_SIZE - 1; i++) {
+        for (int j = i + 1; j < FILE_LIST_SIZE; j++) {
+            int i_size = t_file_list->file_list[i].size;
+            int j_size = t_file_list->file_list[j].size;
+
+            if (i_size < j_size) {
+                FileEntry temp = t_file_list->file_list[i];
+                t_file_list->file_list[i] = t_file_list->file_list[j];
+                t_file_list->file_list[j] = temp;
+            }
+        }
+    }
+
+    printf("Filename\tSize\n");
+    for (int i = 0; i < FILE_LIST_SIZE; i++) {
+        char *filename = t_file_list->file_list[i].filename;
+        int size = t_file_list->file_list[i].size;
+
+        if (filename[0] != '.' && filename[0] != '\0') {
+            printf("%-15s\t%d\n", filename, size);
+        }
+    }
+    free(t_file_list);
+}
+
 void PrintFAT() {
     disk = fopen(disk_location, "rb+");
 
@@ -289,15 +456,20 @@ void PrintFAT() {
     fread(t_fat, sizeof(FAT), 1, disk);
 
     FILE *fat_file = fopen("fat.txt", "w");
-    for (int i = 0; i < FAT_SIZE; i++) {
-        fprintf(fat_file, "%d: %x\n", i, t_fat->list_entries[i].value);
+    fprintf(fat_file,
+            "Entry\tValue\t\tEntry\tValue\t\tEntry\tValue\t\tEntry\tValue\n");
+    for (int i = 0; i < FAT_SIZE; i += 4) {
+        fprintf(fat_file, "%04x\t%08x\t%04x\t%08x\t%04x\t%08x\t%04x\t%08x\n", i,
+                t_fat->list_entries[i].value, i + 1,
+                t_fat->list_entries[i + 1].value, i + 2,
+                t_fat->list_entries[i + 2].value, i + 3,
+                t_fat->list_entries[i + 3].value);
     }
 
     fclose(fat_file);
     fclose(disk);
     free(t_fat);
 }
-
 void PrintFileList() {
     disk = fopen(disk_location, "rb");
 
@@ -314,12 +486,18 @@ void PrintFileList() {
     // Write to file
     FILE *file_list_file = fopen("filelist.txt", "w");
     fprintf(file_list_file,
-            "Item\tFilename\tFirst Block\t\tFile Size(bytes)\n");
+            "Item\tFilename\t\tFirst Block\t\tFile Size(bytes)\n");
     for (int i = 0; i < FILE_LIST_SIZE; i++) {
-        fprintf(file_list_file, "%d\t\t%s\t\t%d\t\t\t%d\n", i,
-                t_file_list->file_list[i].filename,
-                t_file_list->file_list[i].first_block,
-                t_file_list->file_list[i].size);
+        char *filename = t_file_list->file_list[i].filename;
+        int first_block = t_file_list->file_list[i].first_block;
+        int size = t_file_list->file_list[i].size;
+
+        if (filename[0] == '\0') {
+            filename = "NULL";
+        }
+
+        fprintf(file_list_file, "%d\t\t%-15s\t%4d\t\t\t%d\n", i, filename,
+                first_block, size);
     }
     fclose(file_list_file);
 
@@ -347,10 +525,7 @@ int main(int argc, char *argv[]) {
     disk_location = argv[1];
 
     int disk_opened = OpenDisk(disk_location);
-    printf("Loc: %s - Status: %d\n", disk_location, disk_opened);
-
     char *command = argv[2];
-    printf("Command: %s\n", command);
 
     if (disk_opened == 0) {
         printf("Error: Could not open disk\n");
@@ -359,12 +534,25 @@ int main(int argc, char *argv[]) {
 
     if (strcmp(command, "-format") == 0) {
         Format();
+    } else if (strcmp(command, "-list") == 0 && argc == 3) {
+        List();
     } else if (strcmp(command, "-write") == 0 && argc == 5) {
         Write(argv[3], argv[4]);
     } else if (strcmp(command, "-read") == 0 && argc == 5) {
         Read(argv[3], argv[4]);
     } else if (strcmp(command, "-printfat") == 0) {
         PrintFAT();
+    } else if (strcmp(command, "-printfilelist") == 0) {
+        PrintFileList();
+    } else if (strcmp(command, "-delete") == 0 && argc == 4) {
+        Delete(argv[3]);
+    } else if (strcmp(command, "-sorta") == 0) {
+        SortA();
+    } else if (strcmp(command, "-sortd") == 0) {
+        SortD();
+    } else {
+        printf("Error: Invalid command\n");
+        return 1;
     }
     PrintFAT();
     PrintFileList();
