@@ -1,6 +1,6 @@
 Item	Filename		First Block		File Size(bytes)
-0		NULL           	   0			0
-1		NULL           	   0			0
+0		p2.txt         	   1			4039
+1		p1.txt         	   9			4116
 2		NULL           	   0			0
 3		NULL           	   0			0
 4		NULL           	   0			0
